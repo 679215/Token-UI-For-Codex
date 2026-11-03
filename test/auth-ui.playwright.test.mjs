@@ -42,6 +42,7 @@ function launchOptions() {
 const { chromium } = loadPlaywright();
 const panelSource = fs.readFileSync(new URL("../tokens-ui-for-codex-panel.js", import.meta.url), "utf8");
 let browser;
+let browserServer;
 let page;
 let server;
 
@@ -197,7 +198,8 @@ function sign(body, signer, { ts = Date.now(), seq = 1, nonce = crypto.randomByt
 }
 
 before(async () => {
-  browser = await chromium.launch(launchOptions());
+  browserServer = await chromium.launchServer(launchOptions());
+  browser = await chromium.connect(browserServer.wsEndpoint());
   page = await browser.newPage({ viewport: { width: 1200, height: 800 } });
   const html = `
     <!doctype html>
@@ -234,8 +236,18 @@ before(async () => {
 });
 
 after(async () => {
-  if (browser) await browser.close();
-  if (server) await new Promise((resolve) => server.close(resolve));
+  try {
+    if (browser) await browser.close();
+  } finally {
+    try {
+      if (browserServer) await browserServer.kill();
+    } finally {
+      if (server) {
+        server.closeAllConnections();
+        await new Promise((resolve) => server.close(resolve));
+      }
+    }
+  }
 });
 
 test("本地隔离页：auth v2 接受有效负载并拒绝正文/seq/重放/过期篡改", async () => {
